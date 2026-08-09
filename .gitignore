@@ -1,0 +1,25 @@
+# Environment secrets (DO NOT COMMIT YOUR API KEYS!)
+.env
+.env.local
+*.env
+
+# SQLite Database
+*.db
+*.sqlite3
+
+# Python / FastAPI
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Next.js / Node
+node_modules/
+.next/
+out/
+build/
+
+# IDE files
+.vscode/
+.idea/
+.DS_Store
