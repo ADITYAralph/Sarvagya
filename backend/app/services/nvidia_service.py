@@ -1,10 +1,37 @@
+import re
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from openai import OpenAI
 from app.config import settings
 
 logger = logging.getLogger("sarvagya.nvidia_service")
+
+def safe_parse_json(content: str) -> Any:
+    """
+    Robust JSON parser that extracts and validates JSON objects/arrays 
+    from markdown blocks or raw conversational text.
+    """
+    if not content or not content.strip():
+        raise ValueError("Empty content returned from LLM")
+    
+    cleaned = content.strip()
+    
+    # 1. Match markdown codeblock ```json ... ``` or ``` ... ```
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
+    if match:
+        cleaned = match.group(1).strip()
+    
+    # 2. Extract raw JSON object {...} or array [...]
+    if not (cleaned.startswith("{") or cleaned.startswith("[")):
+        obj_match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", cleaned)
+        if obj_match:
+            cleaned = obj_match.group(1).strip()
+            
+    return json.loads(cleaned)
+
+# Alias for backward compatibility
+_clean_and_parse_json = safe_parse_json
 
 class NvidiaNIMService:
     def __init__(self):
@@ -27,17 +54,63 @@ class NvidiaNIMService:
     def is_live(self) -> bool:
         return self.client is not None
 
-    def analyze_resume(self, resume_text: str, target_role: str) -> Dict[str, Any]:
+    def analyze_resume(
+        self, 
+        resume_text: str, 
+        target_role: str, 
+        is_valid: bool = True, 
+        error_reason: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Performs strict 100-point section rubric ATS audit using NVIDIA NIM LLM 
+        with fallback to content-driven dynamic mathematical analysis.
+        """
+        # Short-circuit invalid PDF documents (< 50 words or missing standard headers)
+        if not is_valid:
+            return {
+                "is_valid": False,
+                "error_message": error_reason or "Document invalid or lacks recognizable resume sections/text.",
+                "overall_score": 10,
+                "skills_score": 5,
+                "impact_score": 0,
+                "formatting_score": 3,
+                "relevance_score": 2,
+                "matching_skills": [],
+                "missing_keywords": ["Valid Resume Document Structure", "Technical Core Skills", "Work Experience", "Education"],
+                "strengths": [],
+                "suggestions": [
+                    "Upload a text-searchable PDF resume containing readable Education, Skills, Experience, and Projects headers.",
+                    "Ensure the document contains at least 50+ words of readable career content."
+                ]
+            }
+
+        # Attempt NVIDIA NIM LLM completion with strict 100-Point Section Rubric
         if self.client:
             try:
                 system_prompt = (
-                    "You are an expert AI Campus Placement ATS Analyzer and Career Coach. "
-                    "Analyze the given resume against the target role and output strictly valid JSON "
-                    "with keys: overall_score (0-100), formatting_score (0-100), skills_score (0-100), "
-                    "impact_score (0-100), relevance_score (0-100), matching_skills (array of strings), "
+                    "You are a strict, mathematical AI ATS Resume Auditor. "
+                    "Analyze the exact word-for-word candidate resume text provided against the specified target job role. "
+                    "Evaluate using this exact 100-Point Section Rubric:\n"
+                    "1. Section 1: Target Role Keyword Match (Max 35 Points) -> skills_score: Compare skills explicitly written in the resume text against target_role requirements.\n"
+                    "2. Section 2: Quantifiable Bullet Point Impact (Max 30 Points) -> impact_score: Count experience/project bullet points containing concrete numbers (%, $, metrics). Severely penalize vague descriptions.\n"
+                    "3. Section 3: Formatting & Structure Completeness (Max 20 Points) -> formatting_score: Verify presence of standard headers (Summary, Experience/Work, Projects, Skills, Education).\n"
+                    "4. Section 4: Grammar & Technical Clarity (Max 15 Points) -> relevance_score: Evaluate conciseness and action verb usage.\n\n"
+                    "MANDATORY RULE: overall_score MUST EQUAL THE EXACT SUM: skills_score + impact_score + formatting_score + relevance_score (Max 100).\n\n"
+                    "CONSTRAINTS:\n"
+                    "- matching_skills MUST list ONLY skills explicitly present in candidate's text.\n"
+                    "- missing_keywords MUST list core missing skills for target_role.\n"
+                    "- strengths MUST list 3 specific strengths observed in candidate text.\n"
+                    "- suggestions MUST quote specific weak bullet points or phrases from candidate text and supply metric-driven, rewritten improvements.\n\n"
+                    "Output strictly valid JSON with keys: "
+                    "overall_score (integer 0-100), skills_score (integer 0-35), impact_score (integer 0-30), "
+                    "formatting_score (integer 0-20), relevance_score (integer 0-15), matching_skills (array of strings), "
                     "missing_keywords (array of strings), strengths (array of strings), suggestions (array of strings)."
                 )
-                user_prompt = f"Target Role: {target_role}\n\nResume Text:\n{resume_text[:3500]}"
+                user_prompt = (
+                    f"TARGET JOB ROLE: {target_role}\n\n"
+                    f"EXACT CANDIDATE RESUME TEXT:\n{resume_text[:4500]}\n\n"
+                    "Perform the strict 100-point section rubric audit. Calculate exact section scores and sum into overall_score."
+                )
                 
                 response = self.client.chat.completions.create(
                     model=self.model_name,
@@ -46,58 +119,97 @@ class NvidiaNIMService:
                         {"role": "user", "content": user_prompt}
                     ],
                     temperature=0.2,
-                    max_tokens=1000
+                    max_tokens=4096
                 )
-                content = response.choices[0].message.content.strip()
-                if content.startswith("```json"):
-                    content = content[7:]
-                if content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                
-                parsed_json = json.loads(content.strip())
-                if "matching_skills" not in parsed_json:
-                    parsed_json["matching_skills"] = ["Python", "FastAPI", "REST APIs", "Git", "Problem Solving"]
-                return parsed_json
+                content = response.choices[0].message.content
+                parsed_json = safe_parse_json(content)
+                if isinstance(parsed_json, dict) and "skills_score" in parsed_json:
+                    # Enforce exact mathematical sum: overall_score = skills_score + impact_score + formatting_score + relevance_score
+                    s_score = int(parsed_json.get("skills_score", 20))
+                    i_score = int(parsed_json.get("impact_score", 15))
+                    f_score = int(parsed_json.get("formatting_score", 15))
+                    r_score = int(parsed_json.get("relevance_score", 10))
+                    
+                    parsed_json["skills_score"] = min(35, max(0, s_score))
+                    parsed_json["impact_score"] = min(30, max(0, i_score))
+                    parsed_json["formatting_score"] = min(20, max(0, f_score))
+                    parsed_json["relevance_score"] = min(15, max(0, r_score))
+                    parsed_json["overall_score"] = (
+                        parsed_json["skills_score"] + 
+                        parsed_json["impact_score"] + 
+                        parsed_json["formatting_score"] + 
+                        parsed_json["relevance_score"]
+                    )
+                    parsed_json["is_valid"] = True
+                    parsed_json["error_message"] = None
+                    return parsed_json
             except Exception as e:
-                logger.warning(f"NVIDIA NIM API call failed for resume analysis, using fallback: {e}")
+                logger.warning(f"NVIDIA NIM API call failed for resume audit, executing mathematical rubric fallback: {e}")
 
-        # High quality fallback
+        # Mathematical Section Rubric Fallback Calculator
+        text_lower = resume_text.lower()
         role_lower = target_role.lower()
-        matching_sk = ["Data Structures & Algorithms", "Python", "REST API Design", "Git & GitHub", "SQL"]
-        missing_kw = ["Docker & Kubernetes", "CI/CD Pipelines", "System Architecture", "Unit Testing", "API Security"]
-        if "data" in role_lower:
-            matching_sk = ["Python", "SQL", "Pandas", "Statistics", "Data Visualization"]
-            missing_kw = ["PyTorch / TensorFlow", "SQL Query Optimization", "Model Evaluation", "Scikit-Learn", "Feature Engineering"]
-        elif "front" in role_lower:
-            matching_sk = ["JavaScript / TypeScript", "React.js", "HTML5 & CSS3", "Tailwind CSS", "Git"]
-            missing_kw = ["Next.js App Router", "State Management (Zustand/Redux)", "Web Vitals Optimization", "TypeScript Strict Types"]
+        
+        # Skill dictionary scanning (explicit matches only)
+        all_skills = [
+            "Python", "Java", "C++", "C#", "JavaScript", "TypeScript", "React", "Next.js", 
+            "Node.js", "FastAPI", "Express", "SQL", "PostgreSQL", "MongoDB", "Redis", 
+            "Docker", "Kubernetes", "AWS", "Git", "GitHub", "CI/CD", "HTML", "CSS",
+            "Tailwind", "REST API", "GraphQL", "PyTorch", "TensorFlow", "Pandas", "Scikit-Learn"
+        ]
+        found_skills = [s for s in all_skills if s.lower() in text_lower]
+        
+        # Section 1: Skills Score (Max 35)
+        role_keywords = ["docker", "kubernetes", "ci/cd", "redis", "system design", "aws", "typescript", "testing", "microservices"]
+        missing_kw = [kw.title() for kw in role_keywords if kw not in text_lower][:4]
+        if not missing_kw:
+            missing_kw = ["System Architecture", "Docker Containerization", "CI/CD Pipelines", "Redis Caching"]
+        skills_score = min(35, max(5, int(round((len(found_skills) / max(1, len(all_skills[:12]))) * 35))))
+
+        # Section 2: Impact Score (Max 30) - Metric numbers count
+        metric_matches = re.findall(r'(\d+%\s*|\$\s*\d+|\d+\s*ms|\d+\s*users|\d+\s*x|\b\d{2,}\b)', text_lower)
+        impact_score = min(30, max(2, len(metric_matches) * 5))
+
+        # Section 3: Formatting & Structure Completeness (Max 20)
+        sections = ["experience", "work", "education", "skills", "projects"]
+        present_sections = [sec for sec in sections if sec in text_lower]
+        formatting_score = min(20, max(5, len(present_sections) * 4))
+
+        # Section 4: Grammar & Technical Clarity (Max 15)
+        role_words = [w for w in role_lower.split() if len(w) > 3]
+        role_match_count = sum(1 for w in role_words if w in text_lower)
+        relevance_score = min(15, max(4, 5 + role_match_count * 3))
+
+        # Exact Mathematical Sum
+        overall_score = skills_score + impact_score + formatting_score + relevance_score
+
+        # Extract weak bullets to quote in suggestions
+        lines = [line.strip() for line in resume_text.splitlines() if len(line.strip()) > 20]
+        weak_bullet = lines[0] if lines else "Responsible for developing applications and handling tasks."
 
         return {
-            "overall_score": 84,
-            "formatting_score": 88,
-            "skills_score": 80,
-            "impact_score": 78,
-            "relevance_score": 86,
-            "matching_skills": matching_sk,
+            "is_valid": True,
+            "error_message": None,
+            "overall_score": overall_score,
+            "skills_score": skills_score,
+            "impact_score": impact_score,
+            "formatting_score": formatting_score,
+            "relevance_score": relevance_score,
+            "matching_skills": found_skills if found_skills else ["General Computer Science"],
             "missing_keywords": missing_kw,
             "strengths": [
-                "Strong foundational projects listed with core technical stack.",
-                "Well-structured Education and Skills sections with good readability.",
-                "Clear professional layout with consistent formatting."
+                f"Section 1: Identified {len(found_skills)} explicit skills in resume text ({', '.join(found_skills[:3]) if found_skills else 'Basic CS'}).",
+                f"Section 3: Verified {len(present_sections)} standard structural section headings.",
+                f"Section 2: Detected {len(metric_matches)} quantifiable metric instances in experience text."
             ],
             "suggestions": [
-                f"Incorporate missing core skills like {', '.join(missing_kw[:3])} to boost ATS match.",
-                "Quantify bullet points with impact metrics (e.g. 'Improved API response latency by 35%').",
-                "Highlight system architecture decisions and performance optimization benchmarks."
+                f"Quote Weak Bullet: '{weak_bullet[:80]}...' -> Rewrite with metric impact: 'Engineered high-concurrency API service, improving response latency by 35% across 100k daily users.'",
+                f"Incorporate missing core role keywords: {', '.join(missing_kw[:2])} to increase Keyword Match score from {skills_score}/35.",
+                f"Add concrete figures (%, $, response time) to project entries to increase Impact score from {impact_score}/30."
             ]
         }
 
     def generate_interview_questions(self, role: str, level: str) -> List[Dict[str, Any]]:
-        """
-        Generates 5 mock interview questions (Behavioral, Technical, DSA) with key hints.
-        """
         if self.client:
             try:
                 system_prompt = (
@@ -115,15 +227,9 @@ class NvidiaNIMService:
                     temperature=0.7,
                     max_tokens=1000
                 )
-                content = response.choices[0].message.content.strip()
-                if content.startswith("```json"):
-                    content = content[7:]
-                if content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                parsed = json.loads(content.strip())
-                if "questions" in parsed:
+                content = response.choices[0].message.content
+                parsed = safe_parse_json(content)
+                if isinstance(parsed, dict) and "questions" in parsed:
                     return parsed["questions"]
                 elif isinstance(parsed, list):
                     return parsed
@@ -205,14 +311,10 @@ class NvidiaNIMService:
                     temperature=0.3,
                     max_tokens=700
                 )
-                content = response.choices[0].message.content.strip()
-                if content.startswith("```json"):
-                    content = content[7:]
-                if content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                return json.loads(content.strip())
+                content = response.choices[0].message.content
+                parsed = safe_parse_json(content)
+                if isinstance(parsed, dict):
+                    return parsed
             except Exception as e:
                 logger.warning(f"NVIDIA NIM API call failed for answer evaluation, using fallback: {e}")
 
@@ -233,9 +335,6 @@ class NvidiaNIMService:
         }
 
     def generate_roadmap(self, target_role: str, duration_weeks: int = 4) -> Dict[str, Any]:
-        """
-        Generates structured week-by-week placement roadmap with daily coding problem recommendations.
-        """
         if self.client:
             try:
                 system_prompt = (
@@ -253,18 +352,13 @@ class NvidiaNIMService:
                     temperature=0.5,
                     max_tokens=1500
                 )
-                content = response.choices[0].message.content.strip()
-                if content.startswith("```json"):
-                    content = content[7:]
-                if content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                return json.loads(content.strip())
+                content = response.choices[0].message.content
+                parsed = safe_parse_json(content)
+                if isinstance(parsed, dict):
+                    return parsed
             except Exception as e:
                 logger.warning(f"NVIDIA NIM API call failed for roadmap generation, using fallback: {e}")
 
-        # Fallback roadmap
         weeks = []
         themes = [
             ("Core Data Structures & Complexity Analysis", ["Arrays & Hashing", "Two Pointers", "Sliding Window"]),
@@ -318,14 +412,10 @@ class NvidiaNIMService:
                     temperature=0.2,
                     max_tokens=800
                 )
-                content = response.choices[0].message.content.strip()
-                if content.startswith("```json"):
-                    content = content[7:]
-                if content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                return json.loads(content.strip())
+                content = response.choices[0].message.content
+                parsed = safe_parse_json(content)
+                if isinstance(parsed, dict):
+                    return parsed
             except Exception as e:
                 logger.warning(f"NVIDIA NIM API call failed for code evaluation, using fallback: {e}")
 
@@ -342,5 +432,107 @@ class NvidiaNIMService:
             ],
             "optimized_code": f"# Optimized {language} implementation for {problem_title}\n" + code
         }
+
+    def enhance_ats_analysis(self, analysis: dict, resume_text: str, target_role: str) -> dict:
+        """
+        PRIMARY NVIDIA NIM deep enhancement pass.
+        Uses the full resume text and maximum token budget to:
+          - Rewrite weak bullet points with quantified metrics
+          - Add role-specific missing keyword recommendations
+          - Enrich strengths with specific observations from resume text
+          - Provide HR-grade improvement suggestions
+        Falls back gracefully if LLM is unavailable or times out.
+        """
+        if not self.client:
+            return analysis
+
+        try:
+            weak = analysis.get("weak_phrases", [])[:5]
+            missing = analysis.get("missing_keywords", [])[:8]
+            score = analysis.get("overall_score", 0)
+            grade = analysis.get("grade", "N/A")
+
+            weak_summary = "\n".join(
+                f'  - "{p["phrase"]}" ({p["location"]})'
+                for p in weak
+            ) if weak else "  - None explicitly detected"
+
+            missing_summary = ", ".join(missing) if missing else "None"
+
+            system_prompt = (
+                "You are a world-class Senior Engineering Hiring Manager and ATS optimization expert. "
+                "You have just received a deterministic ATS scan of a candidate's resume. "
+                "Your job is to dramatically improve the candidate's resume quality with surgical, "
+                "specific, metric-driven rewrites — exactly as a top-tier HR reviewer would. \n\n"
+                "Output ONLY strictly valid JSON with this exact structure:\n"
+                "{\n"
+                '  "enhanced_suggestions": [\n'
+                '    {"original_text": "...", "rewritten_text": "...", "reason": "..."},\n'
+                '    ... (up to 5 items)\n'
+                '  ],\n'
+                '  "strengths": ["...", "...", "..."],\n'
+                '  "missing_keywords_commentary": ["...", "...", "..."],\n'
+                '  "hr_verdict": "One paragraph HR shortlisting verdict for this candidate."\n'
+                "}\n\n"
+                "Rules:\n"
+                "- Each rewritten_text MUST include at least one concrete metric (%, ms, users, $, x faster).\n"
+                "- Strengths must cite specific lines from the resume, not generic praise.\n"
+                "- missing_keywords_commentary must explain WHY each missing keyword matters for this specific role.\n"
+                "- Be strict and honest — do not inflate the candidate."
+            )
+
+            user_prompt = (
+                f"TARGET ROLE: {target_role}\n"
+                f"ATS SCORE: {score}/100 (Grade: {grade})\n"
+                f"MISSING KEYWORDS: {missing_summary}\n\n"
+                f"WEAK PHRASES FLAGGED BY ATS:\n{weak_summary}\n\n"
+                f"FULL RESUME TEXT:\n{resume_text[:3500]}\n\n"
+                "Provide the JSON enhancement output now."
+            )
+
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt}
+                ],
+                temperature=0.25,
+                max_tokens=1500,
+            )
+            content = response.choices[0].message.content
+            parsed = safe_parse_json(content)
+
+            if isinstance(parsed, dict):
+                # ── Merge enhanced_suggestions into suggestions list ──
+                enhanced = parsed.get("enhanced_suggestions", [])
+                for item in enhanced[:5]:
+                    if isinstance(item, dict) and item.get("rewritten_text"):
+                        orig = item.get("original_text", "")[:70]
+                        rewrite = item.get("rewritten_text", "")[:140]
+                        reason = item.get("reason", "")
+                        analysis["suggestions"].append(
+                            f'✨ Rewrite: "{orig}..." → "{rewrite}" — {reason}'
+                        )
+
+                # ── Replace/enrich strengths with LLM observations ──
+                llm_strengths = parsed.get("strengths", [])
+                if llm_strengths:
+                    analysis["strengths"] = llm_strengths[:5]
+
+                # ── Append keyword commentary as extra suggestions ──
+                kw_commentary = parsed.get("missing_keywords_commentary", [])
+                for commentary in kw_commentary[:3]:
+                    if commentary:
+                        analysis["suggestions"].append(f"🔑 {commentary}")
+
+                # ── Add HR verdict as a top-level insight ──
+                hr_verdict = parsed.get("hr_verdict", "")
+                if hr_verdict:
+                    analysis.setdefault("hr_verdict", hr_verdict)
+
+        except Exception as e:
+            logger.warning(f"NVIDIA NIM enhancement pass failed (non-critical, keeping deterministic result): {e}")
+
+        return analysis
 
 nvidia_service = NvidiaNIMService()

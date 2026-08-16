@@ -8,11 +8,14 @@ class ResumeAnalysisResponse(BaseModel):
     id: Optional[int] = None
     filename: str
     target_role: str
+    is_valid: bool = True
+    error_message: Optional[str] = None
     overall_score: int
     formatting_score: int
     skills_score: int
     impact_score: int
     relevance_score: int
-    missing_keywords: List[str]
-    strengths: List[str]
-    suggestions: List[str]
+    matching_skills: List[str] = []
+    missing_keywords: List[str] = []
+    strengths: List[str] = []
+    suggestions: List[str] = []

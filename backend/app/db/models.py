@@ -25,8 +25,16 @@ class ResumeAnalysis(Base):
     impact_score = Column(Integer)
     relevance_score = Column(Integer)
     missing_keywords = Column(Text)  # JSON string list
+    matching_skills = Column(Text, nullable=True)   # JSON string list
     suggestions = Column(Text)       # JSON string list
     strengths = Column(Text)         # JSON string list
+    # Deep ATS analysis columns
+    grade = Column(String, nullable=True)
+    total_words = Column(Integer, nullable=True)
+    strong_keyword_count = Column(Integer, nullable=True)
+    filler_count = Column(Integer, nullable=True)
+    word_annotations_json = Column(Text, nullable=True)   # JSON serialized word annotations
+    section_scores_json = Column(Text, nullable=True)     # JSON serialized section scores
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class InterviewSession(Base):

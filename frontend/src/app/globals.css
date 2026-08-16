@@ -1,20 +1,228 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Design Token Custom Properties (TalentsPro Light Theme) ─── */
 :root {
-  --background: #000000;
-  --foreground: #ffffff;
+  --background: #f6f5f2;      /* Warm cream/off-white background */
+  --foreground: #1c1c1a;      /* Charcoal black for readability */
+  --primary: #f05e38;         /* Coral orange brand color */
+  --primary-light: #ff7c5c;   /* Lighter orange for hover/glow */
+  --primary-dim: #d04622;     /* Deeper orange */
+  --primary-glow: rgba(240, 94, 56, 0.15);
+  --surface: #ffffff;         /* Pure white cards */
+  --surface-hover: #fcfbfa;   /* Very subtle cream hover */
+  --elevated: #ffffff;
+  --border: rgba(0, 0, 0, 0.06); /* Soft light borders */
+  --border-hover: rgba(0, 0, 0, 0.12);
+  --muted: #6e6d6a;           /* Warm gray for muted text */
 }
 
+/* ─── Base ─── */
 body {
-  background-color: #000000;
-  color: #ffffff;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* ─── Glassmorphic Card (Optimised for Light Theme) ─── */
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(240, 94, 56, 0.15);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.glass-card-neon {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(240, 94, 56, 0.2);
+  box-shadow: 0 10px 30px rgba(240, 94, 56, 0.04), 0 0 0 1px rgba(240, 94, 56, 0.02);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glass-card-neon:hover {
+  border-color: rgba(240, 94, 56, 0.4);
+  box-shadow: 0 15px 40px rgba(240, 94, 56, 0.08), 0 0 25px rgba(240, 94, 56, 0.08);
+}
+
+/* ─── Orange Glow Effects ─── */
 .neon-border {
-  border: 1px solid #76B900;
-  box-shadow: 0 0 15px rgba(118, 185, 0, 0.35);
+  border: 1px solid var(--primary);
+  box-shadow: 0 0 15px var(--primary-glow), 0 0 30px rgba(240, 94, 56, 0.08);
+}
+
+.neon-glow {
+  box-shadow: 0 0 15px var(--primary-glow), 0 0 30px rgba(240, 94, 56, 0.08);
+}
+
+.neon-glow-sm {
+  box-shadow: 0 0 8px rgba(240, 94, 56, 0.15);
+}
+
+.neon-glow-pulse {
+  animation: glow-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 15px rgba(240, 94, 56, 0.1), 0 0 30px rgba(240, 94, 56, 0.05); }
+  50% { box-shadow: 0 0 25px rgba(240, 94, 56, 0.2), 0 0 50px rgba(240, 94, 56, 0.1); }
+}
+
+/* ─── Gradient Text (Warm Coral Gradient) ─── */
+.gradient-text {
+  background: linear-gradient(135deg, #f05e38, #ff7c5c, #d04622);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-hero {
+  background: linear-gradient(135deg, #1c1c1a 0%, #4a4a46 50%, #f05e38 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Shimmer Skeleton Loader (Light Theme) ─── */
+.shimmer-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.02) 0%,
+    rgba(0, 0, 0, 0.06) 50%,
+    rgba(0, 0, 0, 0.02) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite linear;
+  border-radius: 8px;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ─── Glow Chip / Capsule Badge (Light Theme) ─── */
+.glow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  border: 1px solid;
+  transition: all 0.2s ease;
+}
+
+.glow-chip-neon {
+  background: rgba(240, 94, 56, 0.06);
+  border-color: rgba(240, 94, 56, 0.2);
+  color: #f05e38;
+}
+
+.glow-chip-neon:hover {
+  background: rgba(240, 94, 56, 0.1);
+  box-shadow: 0 0 12px rgba(240, 94, 56, 0.15);
+}
+
+/* ─── Ambient Mesh Background (Warm Theme) ─── */
+.ambient-mesh {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 0% 100%, rgba(240, 94, 56, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 0%, rgba(240, 94, 56, 0.02) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 0%, rgba(240, 94, 56, 0.01) 0%, transparent 60%);
+}
+
+/* ─── Focus Rings ─── */
+.focus-neon:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px rgba(240, 94, 56, 0.4);
+}
+
+input:focus, select:focus, textarea:focus {
+  box-shadow: 0 0 0 1px rgba(240, 94, 56, 0.3), 0 0 12px rgba(240, 94, 56, 0.08);
+}
+
+/* ─── Custom Scrollbar (Light Theme) ─── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f0eb;
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #dcdad4;
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #c7c5be;
+}
+
+/* Global scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f6f5f2;
+}
+::-webkit-scrollbar-thumb {
+  background: #e2e1db;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #cccbb5;
+}
+
+/* ─── No Scrollbar Utility ─── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ─── Glass Input (Light Theme) ─── */
+.glass-input {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(8px);
+  transition: all 0.2s ease;
+  color: #1c1c1a;
+}
+
+.glass-input::placeholder {
+  color: #a09f9a;
+}
+
+.glass-input:focus {
+  border-color: rgba(240, 94, 56, 0.4);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(240, 94, 56, 0.2), 0 0 16px rgba(240, 94, 56, 0.08);
+}
+
+/* ─── Float Animation ─── */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }
